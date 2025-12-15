@@ -241,6 +241,8 @@ int  APP_DTU_Remote_Cnt_Sta_Get(void);
 void APP_DTU_Send_Config_Info(void);
 void APP_DTU_Send_System_config(void);
 
+void BSP_DTU_Power_Reboot(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1710,5 +1710,16 @@ void APP_DTU_Handle(void)
     APP_DTU_Rec_Handle();
 }
 
+void BSP_DTU_Power_Reboot(void)
+{
+    // 1. 先拉低，断电
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2, GPIO_PIN_RESET);
+    HAL_Delay(1000); // 建议断电1s以上，确保电容放电和模块掉电彻底
+
+    // 2. 再拉高，重新上电
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2, GPIO_PIN_SET);
+    HAL_Delay(1000); // 上电后延时，确保模块完成自检
+}
+
 /*****END OF FILE****/
 
