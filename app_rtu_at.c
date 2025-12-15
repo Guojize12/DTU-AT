@@ -3,6 +3,23 @@
 
 //#define USE_RTU_CACHE //none
 
+// Forward declaration for hard power reboot function
+void BSP_DTU_Power_Reboot(void);
+
+// 4G模块故障恢复机制常量定义
+#define AT_FAIL_LIMIT 10                   // AT连续失败次数上限，超过则软重启
+#define SOFT_RESET_LIMIT 3                 // 软重启次数上限，超过则硬重启
+#define HARD_RESET_MIN_GAP_TICKS 1200      // 硬重启最小间隔(100ms ticks) = 2分钟
+
+// 计算自上次硬重启以来的tick数，处理首次重启和计数器回绕
+static inline uint32_t get_ticks_since_last_reboot_at(uint32_t current_tick, uint32_t last_reboot_tick)
+{
+    if (last_reboot_tick == 0) {
+        return HARD_RESET_MIN_GAP_TICKS; // 首次重启，返回满足条件的值
+    }
+    return (current_tick - last_reboot_tick); // 无符号减法自动处理回绕
+}
+
 #define  RTU_AT_CMD_SEND          "AT+MIPSEND=%d,0,"  //通道 发 
 
 #define  RTU_AT_CMD_URC           "+MIPURC"         //接收数据头
@@ -1205,7 +1222,61 @@ void APP_RTU_AT_Config_Handle_Err(void)
 int APP_RTU_AT_Ready_Chk(void)
 {
     int ret = -1;
+    static uint32_t tick_counter = 0; // 本地时钟计数器(100ms单位)
+    tick_counter++;
+    
     g_app_rtu_at.poweron_chk++;
+    
+    // AT层故障检测与恢复机制
+    // 当网络离线且poweron=0或2时，计数连续失败检查
+    if (APP_RTU_AT_Chk_Cntn_Sta() == USR_STATE_OFF && 
+        (g_app_rtu_at.poweron == 0 || g_app_rtu_at.poweron == 2))
+    {
+        g_app_rtu_at.at_fail_count++;
+        
+        // 达到AT失败上限，触发软重启
+        if (g_app_rtu_at.at_fail_count >= AT_FAIL_LIMIT)
+        {
+            g_app_rtu_at.at_fail_count = 0; // 重置失败计数
+            g_app_rtu_at.soft_reset_times++;
+            
+            LOGT("warn:AT layer detected %d consecutive failures, triggering soft reset #%d\n", 
+                 AT_FAIL_LIMIT, g_app_rtu_at.soft_reset_times);
+            APP_RTU_AT_RESET(0); // 软重启(AT+MREBOOT)
+            
+            // 如果软重启次数达到上限，触发硬重启
+            if (g_app_rtu_at.soft_reset_times >= SOFT_RESET_LIMIT)
+            {
+                uint32_t ticks_since_last = get_ticks_since_last_reboot_at(tick_counter, g_app_rtu_at.last_hard_reboot_tick);
+                if (ticks_since_last >= HARD_REBOOT_MIN_GAP_TICKS)
+                {
+                    LOGT("warn:AT layer triggering hard power reboot after %d soft resets (last hard reboot %d ticks ago)\n",
+                         SOFT_RESET_LIMIT, ticks_since_last);
+                    g_app_rtu_at.soft_reset_times = 0; // 重置软重启计数
+                    g_app_rtu_at.last_hard_reboot_tick = tick_counter;
+                    BSP_DTU_Power_Reboot(); // 硬件断电重启
+                }
+                else
+                {
+                    LOGT("warn:hard reboot skipped by AT layer - too soon (gap=%d ticks, need %d)\n",
+                         ticks_since_last, HARD_RESET_MIN_GAP_TICKS);
+                    // 不重置soft_reset_times，下次软重启后会再次尝试
+                }
+            }
+        }
+    }
+    else
+    {
+        // 网络恢复，重置故障计数器
+        if (g_app_rtu_at.at_fail_count > 0 || g_app_rtu_at.soft_reset_times > 0)
+        {
+            LOGT("info:AT layer recovery - network restored, resetting counters (at_fail=%d, soft_reset=%d)\n",
+                 g_app_rtu_at.at_fail_count, g_app_rtu_at.soft_reset_times);
+            g_app_rtu_at.at_fail_count = 0;
+            g_app_rtu_at.soft_reset_times = 0;
+        }
+    }
+    
     //dtu上电检测
     if (g_app_rtu_at.poweron == 0) //未检出到开机
     {
