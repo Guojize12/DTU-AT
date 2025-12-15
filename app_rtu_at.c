@@ -11,6 +11,15 @@ void BSP_DTU_Power_Reboot(void);
 #define SOFT_RESET_LIMIT 3                 // 软重启次数上限，超过则硬重启
 #define HARD_RESET_MIN_GAP_TICKS 1200      // 硬重启最小间隔(100ms ticks) = 2分钟
 
+// 计算自上次硬重启以来的tick数，处理首次重启和计数器回绕
+static inline uint32_t get_ticks_since_last_reboot_at(uint32_t current_tick, uint32_t last_reboot_tick)
+{
+    if (last_reboot_tick == 0) {
+        return HARD_RESET_MIN_GAP_TICKS; // 首次重启，返回满足条件的值
+    }
+    return (current_tick - last_reboot_tick); // 无符号减法自动处理回绕
+}
+
 #define  RTU_AT_CMD_SEND          "AT+MIPSEND=%d,0,"  //通道 发 
 
 #define  RTU_AT_CMD_URC           "+MIPURC"         //接收数据头
@@ -1238,10 +1247,8 @@ int APP_RTU_AT_Ready_Chk(void)
             // 如果软重启次数达到上限，触发硬重启
             if (g_app_rtu_at.soft_reset_times >= SOFT_RESET_LIMIT)
             {
-                // 使用无符号差值处理计数器回绕，适用于32位计数器
-                uint32_t ticks_since_last = (g_app_rtu_at.last_hard_reboot_tick == 0) ? HARD_RESET_MIN_GAP_TICKS : 
-                                             (tick_counter - g_app_rtu_at.last_hard_reboot_tick);
-                if (ticks_since_last >= HARD_RESET_MIN_GAP_TICKS)
+                uint32_t ticks_since_last = get_ticks_since_last_reboot_at(tick_counter, g_app_rtu_at.last_hard_reboot_tick);
+                if (ticks_since_last >= HARD_REBOOT_MIN_GAP_TICKS)
                 {
                     LOGT("warn:AT layer triggering hard power reboot after %d soft resets (last hard reboot %d ticks ago)\n",
                          SOFT_RESET_LIMIT, ticks_since_last);

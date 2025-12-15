@@ -7,8 +7,17 @@
 #define APP_DTU_SIGNAL_TIMEOUT  (1200)  //dtu连接超时判断时间:2分钟 (1200*100ms)
 
 // DTU层故障恢复机制常量
-#define OFFLINE_RETRY_LIMIT 5              // 离线重试次数上限 (~10分钟)
+#define OFFLINE_RETRY_LIMIT 5              // 离线重试次数上限 (首次2分钟+4次x30秒=约4分钟)
 #define HARD_REBOOT_MIN_GAP_TICKS 1200     // 硬重启最小间隔(100ms ticks) = 2分钟
+
+// 计算自上次硬重启以来的tick数，处理首次重启和计数器回绕
+static inline uint32_t get_ticks_since_last_reboot(uint32_t current_tick, uint32_t last_reboot_tick)
+{
+    if (last_reboot_tick == 0) {
+        return HARD_REBOOT_MIN_GAP_TICKS; // 首次重启，返回满足条件的值
+    }
+    return (current_tick - last_reboot_tick); // 无符号减法自动处理回绕
+}
 
 extern gss_device  GSS_device;
 extern gss_device_alarm_stat GSS_device_alarm_stat;
@@ -1610,12 +1619,10 @@ void APP_DTU_Callback(void)
             
             LOGT("reconnect:tcp reset complete, start reconnection (offline_retry=%d)\n", consecutive_offline_retries);
             
-            // 如果离线重试达到上限(约10分钟)仍未恢复，触发硬件重启
+            // 如果离线重试达到上限(约4分钟)仍未恢复，触发硬件重启
             if (consecutive_offline_retries >= OFFLINE_RETRY_LIMIT)
             {
-                // 使用无符号差值处理计数器回绕，适用于32位计数器
-                uint32_t ticks_since_last = (last_hard_reboot_tick == 0) ? HARD_REBOOT_MIN_GAP_TICKS : 
-                                             (tick_counter - last_hard_reboot_tick);
+                uint32_t ticks_since_last = get_ticks_since_last_reboot(tick_counter, last_hard_reboot_tick);
                 if (ticks_since_last >= HARD_REBOOT_MIN_GAP_TICKS)
                 {
                     LOGT("warn:DTU layer triggering hard power reboot after %d offline retries\n", consecutive_offline_retries);
@@ -1649,9 +1656,7 @@ void APP_DTU_Callback(void)
             // 同样检查硬重启条件
             if (consecutive_offline_retries >= OFFLINE_RETRY_LIMIT)
             {
-                // 使用无符号差值处理计数器回绕，适用于32位计数器
-                uint32_t ticks_since_last = (last_hard_reboot_tick == 0) ? HARD_REBOOT_MIN_GAP_TICKS : 
-                                             (tick_counter - last_hard_reboot_tick);
+                uint32_t ticks_since_last = get_ticks_since_last_reboot(tick_counter, last_hard_reboot_tick);
                 if (ticks_since_last >= HARD_REBOOT_MIN_GAP_TICKS)
                 {
                     LOGT("warn:DTU layer triggering hard power reboot after %d offline retries\n", consecutive_offline_retries);
