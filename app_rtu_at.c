@@ -9,7 +9,6 @@ void BSP_DTU_Power_Reboot(void);
 // 4G模块故障恢复机制常量定义
 #define AT_FAIL_LIMIT 10                   // AT连续失败次数上限，超过则软重启
 #define SOFT_RESET_LIMIT 3                 // 软重启次数上限，超过则硬重启
-#define HARD_RESET_MIN_GAP_MS 120000       // 硬重启最小间隔(毫秒) = 2分钟
 #define HARD_RESET_MIN_GAP_TICKS 1200      // 硬重启最小间隔(100ms ticks) = 2分钟
 
 #define  RTU_AT_CMD_SEND          "AT+MIPSEND=%d,0,"  //通道 发 
@@ -1239,8 +1238,10 @@ int APP_RTU_AT_Ready_Chk(void)
             // 如果软重启次数达到上限，触发硬重启
             if (g_app_rtu_at.soft_reset_times >= SOFT_RESET_LIMIT)
             {
-                uint32_t ticks_since_last = tick_counter - g_app_rtu_at.last_hard_reboot_tick;
-                if (ticks_since_last >= HARD_RESET_MIN_GAP_TICKS || g_app_rtu_at.last_hard_reboot_tick == 0)
+                // 使用无符号差值处理计数器回绕，适用于32位计数器
+                uint32_t ticks_since_last = (g_app_rtu_at.last_hard_reboot_tick == 0) ? HARD_RESET_MIN_GAP_TICKS : 
+                                             (tick_counter - g_app_rtu_at.last_hard_reboot_tick);
+                if (ticks_since_last >= HARD_RESET_MIN_GAP_TICKS)
                 {
                     LOGT("warn:AT layer triggering hard power reboot after %d soft resets (last hard reboot %d ticks ago)\n",
                          SOFT_RESET_LIMIT, ticks_since_last);
