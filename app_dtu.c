@@ -4,7 +4,7 @@
 #define APP_DTU_UART          BSP_UART3
 #define APP_DTU_UART_BUF      g_uart_buf[APP_DTU_UART]
 
-#define APP_DTU_SIGNAL_TIMEOUT  (6200)  //dtu连接超时判断时间:15秒200毫秒
+#define APP_DTU_SIGNAL_TIMEOUT  (1200)  //dtu连接超时判断时间:2分钟 (1200*100ms)
 
 extern gss_device  GSS_device;
 extern gss_device_alarm_stat GSS_device_alarm_stat;
@@ -1570,6 +1570,12 @@ uint8_t  APP_DTU_Connect_Remote_Handle(void)
 }
 void APP_DTU_Callback(void)
 {
+    static uint16_t consecutive_offline_retries = 0; // DTU层离线重试计数
+    static uint32_t last_hard_reboot_tick = 0; // 上次硬重启时间戳(单位:100ms)
+    static uint32_t tick_counter = 0; // 本地时钟计数器
+    
+    tick_counter++; // 每次回调递增(100ms一次)
+    
     if (g_dtu_cmd.power_on_status == USR_ERROR) //DTU上电检测
     {
         if (APP_DTU_Connect_Remote_Handle() == USR_EOK)
@@ -1586,7 +1592,7 @@ void APP_DTU_Callback(void)
         if (g_dtu_cmd.response_num == APP_DTU_SIGNAL_TIMEOUT + 10) //首次超时，立即重连 10秒后重连
         {
             LOGT("warn:dtu timeout - no response for 2min, reconnecting now...\n");
-         
+            consecutive_offline_retries++; // 增加离线重试计数
             
             // 复位RTU相关标志，让程序重新走上电连接流程（类似第一次运行）
             g_app_rtu_at.poweron = 0;           // 复位上电标志
@@ -1598,13 +1604,35 @@ void APP_DTU_Callback(void)
             APP_DTU_Status_Reset();             // 内部已将response_num清零
             g_dtu_cmd.power_on_status = USR_ERROR; // 重新进入开机联网流程
             
-            LOGT("reconnect:tcp reset complete, start reconnection\n");
+            LOGT("reconnect:tcp reset complete, start reconnection (offline_retry=%d)\n", consecutive_offline_retries);
+            
+            // 如果离线重试5次(约10分钟)仍未恢复，触发硬件重启
+            #define OFFLINE_RETRY_LIMIT 5
+            #define HARD_REBOOT_MIN_GAP_TICKS 1200  // 2分钟 = 1200*100ms
+            if (consecutive_offline_retries >= OFFLINE_RETRY_LIMIT)
+            {
+                uint32_t ticks_since_last = tick_counter - last_hard_reboot_tick;
+                if (ticks_since_last >= HARD_REBOOT_MIN_GAP_TICKS || last_hard_reboot_tick == 0)
+                {
+                    LOGT("warn:DTU layer triggering hard power reboot after %d offline retries\n", consecutive_offline_retries);
+                    last_hard_reboot_tick = tick_counter;
+                    consecutive_offline_retries = 0; // 重置计数
+                    BSP_DTU_Power_Reboot();
+                }
+                else
+                {
+                    LOGT("warn:hard reboot skipped - too soon (gap=%d ticks, need %d)\n", 
+                         ticks_since_last, HARD_REBOOT_MIN_GAP_TICKS);
+                }
+            }
         }
         // 如果30秒后仍未连接成功，每30秒重试一次
         else if ((g_dtu_cmd.response_num - APP_DTU_SIGNAL_TIMEOUT) % 300 == 0)
         {
             uint16_t retry_times = (g_dtu_cmd.response_num - APP_DTU_SIGNAL_TIMEOUT) / 300;
             LOGT("warn:reconnect retry #%d - still offline\n", retry_times);
+            consecutive_offline_retries++; // 每次重试都计数
+            
             // 重置重试间隔参数（确保每次重试都从快速重试开始）
             g_net_cnt_retry[DTU_CNT_STEP0] = 0;
             
@@ -1613,11 +1641,36 @@ void APP_DTU_Callback(void)
             g_app_rtu_at.poweron_chk = 0;
             APP_DTU_Status_Reset();
             g_dtu_cmd.power_on_status = USR_ERROR;
+            
+            // 同样检查硬重启条件
+            if (consecutive_offline_retries >= OFFLINE_RETRY_LIMIT)
+            {
+                uint32_t ticks_since_last = tick_counter - last_hard_reboot_tick;
+                if (ticks_since_last >= HARD_REBOOT_MIN_GAP_TICKS || last_hard_reboot_tick == 0)
+                {
+                    LOGT("warn:DTU layer triggering hard power reboot after %d offline retries\n", consecutive_offline_retries);
+                    last_hard_reboot_tick = tick_counter;
+                    consecutive_offline_retries = 0;
+                    BSP_DTU_Power_Reboot();
+                }
+                else
+                {
+                    LOGT("warn:hard reboot skipped - too soon (gap=%d ticks, need %d)\n", 
+                         ticks_since_last, HARD_REBOOT_MIN_GAP_TICKS);
+                }
+            }
         }
     }
     else
     {
         g_dtu_cmd.net_status = USR_STATE_ON;//dtu连接成功
+        
+        // 一旦有响应，重置离线重试计数器
+        if (consecutive_offline_retries > 0)
+        {
+            LOGT("info:connection restored, resetting offline retry counter (was %d)\n", consecutive_offline_retries);
+            consecutive_offline_retries = 0;
+        }
 
         // 检查是否有报警需要上报
         if (alarm_dtu_trig == 1 && (GSS_device_alarm_stat.alarm == 1 || GSS_device_alarm_stat.alarm == 2)) // 有报警时优先上报报警数据

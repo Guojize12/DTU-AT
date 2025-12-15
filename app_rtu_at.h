@@ -81,6 +81,11 @@ typedef struct
     uint16_t net_timeout_cnt; //掉网计数
 
     uint8_t  mode;//多通道使能
+    
+    // 新增：4G模块故障恢复机制相关字段
+    uint16_t at_fail_count;          // 连续AT失败计数
+    uint8_t  soft_reset_times;       // 软重启次数
+    uint32_t last_hard_reboot_tick;  // 上次硬重启时间戳(单位:100ms)
 } app_rtu_at_def;
 
 extern app_rtu_at_def g_app_rtu_at;
