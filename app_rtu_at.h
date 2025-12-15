@@ -81,6 +81,11 @@ typedef struct
     uint16_t net_timeout_cnt; //掉网计数
 
     uint8_t  mode;//多通道使能
+    
+    // RTU self-healing counters
+    uint32_t at_fail_count;           // AT failure counter
+    uint32_t soft_reset_times;        // soft reset counter
+    uint32_t last_hard_reboot_tick;   // last hard reboot tick
 } app_rtu_at_def;
 
 extern app_rtu_at_def g_app_rtu_at;
