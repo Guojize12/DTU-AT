@@ -3,6 +3,15 @@
 
 //#define USE_RTU_CACHE //none
 
+// Forward declaration for BSP_DTU_Power_Reboot (defined in app_dtu.c)
+extern void BSP_DTU_Power_Reboot(void);
+
+// RTU self-healing thresholds
+#define RTU_AT_SOFT_RESET_FAIL_TH      10   // AT failures before soft reset
+#define RTU_AT_SOFT_RESET_ROUND_MAX    3    // soft resets before hard reboot
+#define RTU_AT_HARD_RESET_MIN_GAP_MS   120000  // minimum 120s between hard reboots (in ms)
+#define TICK_PERIOD_MS                 100    // callback period in milliseconds
+
 #define  RTU_AT_CMD_SEND          "AT+MIPSEND=%d,0,"  //通道 发 
 
 #define  RTU_AT_CMD_URC           "+MIPURC"         //接收数据头
@@ -1205,7 +1214,65 @@ void APP_RTU_AT_Config_Handle_Err(void)
 int APP_RTU_AT_Ready_Chk(void)
 {
     int ret = -1;
+    static uint32_t rtu_tick_counter = 0;
+    rtu_tick_counter++;
+    
     g_app_rtu_at.poweron_chk++;
+    
+    // RTU self-healing block
+    int connection_status = APP_RTU_AT_Chk_Cntn_Sta();
+    
+    if (connection_status == USR_STATE_OFF) // offline
+    {
+        g_app_rtu_at.at_fail_count++;
+        
+        // Check if we need soft reset (10 AT failures)
+        if (g_app_rtu_at.at_fail_count >= RTU_AT_SOFT_RESET_FAIL_TH)
+        {
+            LOGT("4G soft reset triggered after %d AT failures\n", g_app_rtu_at.at_fail_count);
+            g_app_rtu_at.at_fail_count = 0;  // reset AT failure counter
+            g_app_rtu_at.soft_reset_times++; // increment soft reset counter
+            APP_RTU_AT_RESET(0); // soft reboot (AT+MREBOOT)
+            
+            // Check if we need hard power reboot (3 soft resets)
+            if (g_app_rtu_at.soft_reset_times >= RTU_AT_SOFT_RESET_ROUND_MAX)
+            {
+                // Calculate time since last hard reboot (handles overflow via unsigned arithmetic)
+                uint32_t time_since_last_hard_reboot = rtu_tick_counter - g_app_rtu_at.last_hard_reboot_tick;
+                uint32_t min_gap_ticks = RTU_AT_HARD_RESET_MIN_GAP_MS / TICK_PERIOD_MS;
+                
+                if (time_since_last_hard_reboot >= min_gap_ticks)
+                {
+                    LOGT("HARD power reboot triggered after %d soft resets (last hard reboot: %d ticks ago)\n",
+                         g_app_rtu_at.soft_reset_times, time_since_last_hard_reboot);
+                    
+                    g_app_rtu_at.last_hard_reboot_tick = rtu_tick_counter;
+                    g_app_rtu_at.soft_reset_times = 0;  // reset soft reset counter
+                    g_app_rtu_at.at_fail_count = 0;     // reset AT failure counter
+                    
+                    BSP_DTU_Power_Reboot(); // hard power cycle
+                    return ret; // return immediately after hard reboot
+                }
+                else
+                {
+                    LOGT("warn:hard reboot skipped - only %d ticks since last (min: %d ticks)\n",
+                         time_since_last_hard_reboot, min_gap_ticks);
+                }
+            }
+        }
+    }
+    else // online - connection recovered
+    {
+        // Reset all RTU self-healing counters on recovery
+        if (g_app_rtu_at.at_fail_count > 0 || g_app_rtu_at.soft_reset_times > 0)
+        {
+            LOGT("RTU connection recovered - resetting counters (AT fails: %d, soft resets: %d)\n",
+                 g_app_rtu_at.at_fail_count, g_app_rtu_at.soft_reset_times);
+            g_app_rtu_at.at_fail_count = 0;
+            g_app_rtu_at.soft_reset_times = 0;
+        }
+    }
+    
     //dtu上电检测
     if (g_app_rtu_at.poweron == 0) //未检出到开机
     {
