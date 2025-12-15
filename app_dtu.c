@@ -5,6 +5,7 @@
 #define APP_DTU_UART_BUF      g_uart_buf[APP_DTU_UART]
 
 #define APP_DTU_SIGNAL_TIMEOUT  (1200)  //dtu连接超时判断时间:2分钟
+#define APP_DTU_TICK_PERIOD_MS  100     //callback period in milliseconds
 
 extern gss_device  GSS_device;
 extern gss_device_alarm_stat GSS_device_alarm_stat;
@@ -1617,8 +1618,10 @@ void APP_DTU_Callback(void)
             // 检查是否需要硬件重启 (5次重试后，且距离上次硬重启至少2分钟)
             if (g_dtu_offline_retry_count >= 5)
             {
+                // Calculate time since last reboot (handles overflow via unsigned arithmetic)
                 uint32_t time_since_last_reboot = tick_counter - g_dtu_last_hard_reboot_tick;
-                if (time_since_last_reboot >= 1200) // 1200 ticks = 2分钟
+                uint32_t min_gap_ticks = (120 * 1000) / APP_DTU_TICK_PERIOD_MS; // 120 seconds in ticks
+                if (time_since_last_reboot >= min_gap_ticks)
                 {
                     LOGT("HARD power reboot triggered after %d offline retries (≈%d min)\n", 
                          g_dtu_offline_retry_count, g_dtu_offline_retry_count * 2);
@@ -1629,7 +1632,8 @@ void APP_DTU_Callback(void)
                 }
                 else
                 {
-                    LOGT("warn:hard reboot skipped - only %d ticks since last reboot (min: 1200)\n", time_since_last_reboot);
+                    LOGT("warn:hard reboot skipped - only %d ticks since last reboot (min: %d)\n", 
+                         time_since_last_reboot, min_gap_ticks);
                 }
             }
             

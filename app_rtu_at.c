@@ -3,13 +3,14 @@
 
 //#define USE_RTU_CACHE //none
 
-// Forward declaration for BSP_DTU_Power_Reboot
+// Forward declaration for BSP_DTU_Power_Reboot (defined in app_dtu.c)
 extern void BSP_DTU_Power_Reboot(void);
 
 // RTU self-healing thresholds
 #define RTU_AT_SOFT_RESET_FAIL_TH      10   // AT failures before soft reset
 #define RTU_AT_SOFT_RESET_ROUND_MAX    3    // soft resets before hard reboot
 #define RTU_AT_HARD_RESET_MIN_GAP_MS   120000  // minimum 120s between hard reboots (in ms)
+#define TICK_PERIOD_MS                 100    // callback period in milliseconds
 
 #define  RTU_AT_CMD_SEND          "AT+MIPSEND=%d,0,"  //通道 发 
 
@@ -1236,8 +1237,9 @@ int APP_RTU_AT_Ready_Chk(void)
             // Check if we need hard power reboot (3 soft resets)
             if (g_app_rtu_at.soft_reset_times >= RTU_AT_SOFT_RESET_ROUND_MAX)
             {
+                // Calculate time since last hard reboot (handles overflow via unsigned arithmetic)
                 uint32_t time_since_last_hard_reboot = rtu_tick_counter - g_app_rtu_at.last_hard_reboot_tick;
-                uint32_t min_gap_ticks = RTU_AT_HARD_RESET_MIN_GAP_MS / 100; // convert ms to ticks (100ms per tick)
+                uint32_t min_gap_ticks = RTU_AT_HARD_RESET_MIN_GAP_MS / TICK_PERIOD_MS;
                 
                 if (time_since_last_hard_reboot >= min_gap_ticks)
                 {
