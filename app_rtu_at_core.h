@@ -22,4 +22,4 @@ void APP_RTU_Tcp_Cnt_Disconnect(uint8_t chl);
 void APP_RTU_AT_Rec_Cfg_Next(void);
 void APP_RTU_AT_Poweron(void);
 void APP_RTU_AT_MIPOPEN_Chl(uint8_t chl);
-void APP_RTU_AT_ENCOD(void)
+void APP_RTU_AT_ENCOD(void);  
