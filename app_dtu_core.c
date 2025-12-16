@@ -4,8 +4,10 @@
 #include "app_dtu_upload.h"
 #include "app_rtu_at.h"
 #include "app_config.h"
+#include "app_dtu_reconnect.h"   // 新增：统一重连模块
 
-#define APP_DTU_SIGNAL_TIMEOUT  (6200)
+// 将原超时常量下调为更合理的90秒（100ms tick）
+#define APP_DTU_SIGNAL_TIMEOUT  (900)
 
 extern gss_device  GSS_device;
 extern gss_device_alarm_stat GSS_device_alarm_stat;
@@ -154,51 +156,28 @@ void APP_DTU_Callback(void)
 {
     if (g_dtu_cmd.power_on_status == USR_ERROR)
     {
+        // 初次上电联接流程
         if (APP_DTU_Connect_Remote_Handle() == USR_EOK)
         {
             g_dtu_cmd.power_on_status = USR_EOK;
             LOGT("Connect to remote server complete!\n");
         }
+        return;
     }
-    else if (++g_dtu_cmd.response_num > APP_DTU_SIGNAL_TIMEOUT)
+
+    // 统一的断线重连调度（包含离线判定、AT上电、TCP重连、硬件重启与冷却）
+    DTU_Reconnect_Tick();
+
+    // 在线或重连过程仍维持业务数据周期策略（遇到真正离线时，链路层会阻断发送）
+    if (g_dtu_cmd.net_status == USR_STATE_ON)
     {
-        g_dtu_cmd.net_status = USR_STATE_OFF;
-
-        if (g_dtu_cmd.response_num == APP_DTU_SIGNAL_TIMEOUT + 10)
-        {
-            LOGT("warn:dtu timeout - no response for 2min, reconnecting now...\n");
-
-            g_app_rtu_at.poweron = 0;
-            g_app_rtu_at.poweron_chk = 0;
-
-            g_net_cnt_retry[DTU_CNT_STEP0] = 30;
-
-            APP_DTU_Status_Reset();
-            g_dtu_cmd.power_on_status = USR_ERROR;
-
-            LOGT("reconnect:tcp reset complete, start reconnection\n");
-        }
-        else if ((g_dtu_cmd.response_num - APP_DTU_SIGNAL_TIMEOUT) % 300 == 0)
-        {
-            uint16_t retry_times = (g_dtu_cmd.response_num - APP_DTU_SIGNAL_TIMEOUT) / 300;
-            LOGT("warn:reconnect retry #%d - still offline\n", retry_times);
-            g_net_cnt_retry[DTU_CNT_STEP0] = 0;
-
-            g_app_rtu_at.poweron = 0;
-            g_app_rtu_at.poweron_chk = 0;
-            APP_DTU_Status_Reset();
-            g_dtu_cmd.power_on_status = USR_ERROR;
-        }
-    }
-    else
-    {
-        g_dtu_cmd.net_status = USR_STATE_ON;
-
+        // 报警上报
         if (alarm_dtu_trig == 1 && (GSS_device_alarm_stat.alarm == 1 || GSS_device_alarm_stat.alarm == 2))
         {
             alarm_dtu_trig = 0;
             APP_DTU_Send_DTUAlarm_sig();
         }
+        // 正常数据上传（位置变化/保底周期）
         else if (g_dtu_cmd.time_num % g_dtu_remote_cmd.normal_interval == 0)
         {
             static uint16_t normal_upload_counter = 0;
@@ -221,6 +200,7 @@ void APP_DTU_Callback(void)
             }
         }
 
+        // 心跳/卡信息/配置/时间校准
         if (g_dtu_cmd.time_num % 99 == 0)
         {
             APP_DTU_Send_Hearbeat();
@@ -238,9 +218,9 @@ void APP_DTU_Callback(void)
         {
             APP_DTU_GetServerTime();
         }
-
-        g_dtu_cmd.time_num++;
     }
+
+    g_dtu_cmd.time_num++;
 }
 
 void APP_DTU_Init(void)
@@ -248,6 +228,7 @@ void APP_DTU_Init(void)
     APP_RTU_AT_Init();
     APP_DTU_Status_Reset();
     APP_DTU_Remote_Head_Init();
+    DTU_Reconnect_Init();  // 新增：初始化重连模块
     BSP_DELAY_MS(2000);
     BSP_TIMER_Init(&g_timer_dtu, APP_DTU_Callback, TIMEOUT_100MS, TIMEOUT_100MS);
     BSP_TIMER_Start(&g_timer_dtu);

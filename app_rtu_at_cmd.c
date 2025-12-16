@@ -1,6 +1,7 @@
 #include "app_rtu_at_cmd.h"
 #include "app_rtu_at_core.h"   /* 引入核心流程函数原型 */
 #include "app_config.h"
+#include "app_dtu_reconnect.h" // 新增：URC断开通知重连模块
 
 app_rtu_sim_def g_app_rtu_sim = {0};
 
@@ -131,14 +132,16 @@ static int APP_RTU_AT_Rec_Chk_MIPOPEN(uint8_t *buffer)
 static int APP_RTU_AT_Rec_Chk_MIPCLOSE(uint8_t *buffer)
 {
     int ret = -1;
+    int chl = -1;
     char *p = strstr((char *)buffer, RTU_AT_MIPCLOSE);
     if (p != NULL)
     {
         p = p + strlen(RTU_AT_MIPCLOSE) +2;
-        ret = atoi(p);
-        LOGT("IP[%d] disconnected\n", ret);
+        chl = atoi(p);
+        LOGT("IP[%d] disconnected\n", chl);
         ret = 0;
-        APP_RTU_Tcp_Cnt_Disconnect(ret);
+        APP_RTU_Tcp_Cnt_Disconnect((uint8_t)chl);
+        if (chl >= 0) { DTU_Reconnect_OnTcpDisconnect((uint8_t)chl); } // 新增：通知重连模块
     }
     return ret;
 }
@@ -155,6 +158,7 @@ static int APP_RTU_AT_Rec_Chk_MIPSTATE(uint8_t *buffer)
         if (strstr(p, "CONNECTED") == 0)
         {
             APP_RTU_AT_MIPOPEN_Chl(ret);
+            DTU_Reconnect_OnTcpDisconnect((uint8_t)ret); // 新增：状态非CONNECTED也触发断链通知
             char *p1 = strrchr(p, '\"');
             if (p1 != NULL)
             {
@@ -307,7 +311,7 @@ void APP_RTU_AT_Rec(uint8_t *buffer, uint16_t len)
         APP_RTU_AT_Rec_Chk_MREBOOT(buffer);
         break;
     case RTU_AT_STEP9:
-        APP_RTU_AT_Rec_Chk_MIPCLOSE(buffer);
+        APP_RTU_AT_Rec_Chk_MIPCLOSE(buffer);     // 新增：内部会通知重连模块
         APP_RTU_AT_Rec_Cfg_Next();
         break;
     case RTU_AT_STEP10:
@@ -422,7 +426,7 @@ int APP_RTU_AT_Rec_Chk_MIPCLOSE_To(uint8_t *buffer)
         p += 2;
         err  = atoi(p);
         LOGT("tcp remote discnt, chl[%d],sta[%d]\n", chl, err);
-        if (chl < 4) { APP_RTU_Tcp_Cnt_Disconnect(chl); }
+        if (chl < 4) { APP_RTU_Tcp_Cnt_Disconnect(chl); DTU_Reconnect_OnTcpDisconnect(chl); } // 新增通知
         ret = 0;
     }
     return ret;

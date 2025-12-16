@@ -2,6 +2,7 @@
 #include "app_rtu_at.h"
 #include "app_dtu_param.h"  /* 补充声明，避免隐式声明警告 */
 #include "app_config.h"
+#include "app_dtu_reconnect.h"  // 新增：应答时通知重连模块
 
 #define APP_DTU_UART          BSP_UART3
 #define APP_DTU_UART_BUF      g_uart_buf[APP_DTU_UART]
@@ -215,6 +216,7 @@ void APP_DTU_Parse_Read(uint16_t cmd, uint8_t *rxBuf, uint16_t rxLen)
             g_dtu_cmd.cnt_status = USR_EOK;
             g_dtu_cmd.response_num = 0;
             g_dtu_cmd.net_status = USR_STATE_ON;
+            DTU_Reconnect_OnAck();  // 新增：应答通知
             if (BSP_CONFIG_Show_Get() == 52) { LOGT("rmt:ht\n"); }
         }
         else
@@ -227,33 +229,44 @@ void APP_DTU_Parse_Read(uint16_t cmd, uint8_t *rxBuf, uint16_t rxLen)
         g_dtu_cmd.response_num = 0;
         APP_DTU_TimeSync_Set(rxBuf, rxLen);
         g_dtu_cmd.cnt_status = USR_EOK;
+        DTU_Reconnect_OnAck();      // 新增：应答通知
         if (BSP_CONFIG_Show_Get() == 52) { LOGT("rmt:time sync\n"); }
         break;
     case DTU_CMD_DEVICE_POWE_ON_STATUS:
         g_dtu_cmd.cnt_status = USR_EOK;
+        g_dtu_cmd.response_num = 0;
+        DTU_Reconnect_OnAck();      // 新增：应答通知
         if (BSP_CONFIG_Show_Get() == 52) { LOGT("rmt:po\n"); }
         break;
     case DTU_CMD_SERVER_GATEWAY:
         g_dtu_cmd.response_num = 0;
+        DTU_Reconnect_OnAck();      // 新增：应答通知
         if (BSP_CONFIG_Show_Get() == 52) { LOGT("rmt:gateway[%d]\n", rxBuf[23]); }
         break;
     case DTU_CMD_DEVICE_SIM:
         g_app_rtu_sim.sta = 1;
+        g_dtu_cmd.response_num = 0;
+        DTU_Reconnect_OnAck();      // 新增：应答通知
         if (BSP_CONFIG_Show_Get() == 52) { LOGT("rmt:sim info\n"); }
         break;
     case DTU_CMD_DEVICE_GPS:
+        g_dtu_cmd.response_num = 0;
+        DTU_Reconnect_OnAck();      // GPS信息也视为链路活跃
         if (BSP_CONFIG_Show_Get() == 52) { LOGT("rmt:gps info\n"); }
         break;
     case DTU_CMD_SERVER_GSS_DATA_UPLOAD:
         g_dtu_cmd.response_num = 0;
+        DTU_Reconnect_OnAck();
         LOGT("rmt:rtd gss\n");
         break;
     case DTU_CMD_SERVER_GSS_ALARM_UPLOAD:
         g_dtu_cmd.response_num = 0;
+        DTU_Reconnect_OnAck();
         LOGT("rmt:ent gss\n");
         break;
     case DTU_CMD_SERVER_GSS_CONFIG_INFO:
         g_dtu_cmd.response_num = 0;
+        DTU_Reconnect_OnAck();
         LOGT("rmt:config info ack\n");
         break;
     default:
@@ -267,32 +280,39 @@ void APP_DTU_Parse_Write(uint16_t cmd, uint8_t *rxBuf, uint16_t rxLen)
     {
     case DTU_CMD_SERVER_HEARTBEAT:
         APP_DTU_Response_Hearbeat(cmd, rxBuf, rxLen);
+        DTU_Reconnect_OnAck();
         if (BSP_CONFIG_Show_Get() == 52) { LOGT("wmt:ht\n"); }
         break;
     case DTU_CMD_SERVER_TIMESYNC:
         APP_DTU_TimeSync_Set(rxBuf, rxLen);
         APP_DTU_Response_Result(cmd, DTU_CMD_RESPONSE_SUCCESS, rxBuf, rxLen);
+        DTU_Reconnect_OnAck();
         if (BSP_CONFIG_Show_Get() == 52) { LOGT("wmt:time sync\n"); }
         break;
     case DTU_CMD_SERVER_DATA_UPLOAD_FREQUENCY:
         APP_DTU_Cmd_Upload_Interval_Set(cmd, rxBuf, rxLen);
+        DTU_Reconnect_OnAck();
         if (BSP_CONFIG_Show_Get() == 52) { LOGT("wmt:up interval\n"); }
         break;
     case DTU_CMD_SERVER_DATA_UPLOAD_ADDRESS_SET:
         APP_DTU_Cmd_Ip_Set(cmd, rxBuf, rxLen);
         APP_DTU_Response_Result(cmd, DTU_CMD_RESPONSE_SUCCESS, rxBuf, rxLen);
+        DTU_Reconnect_OnAck();
         if (BSP_CONFIG_Show_Get() == 52) { LOGT("wmt:ip set\n"); }
         break;
     case DTU_CMD_SERVER_DATA_UPLOAD_ADDRESS_GET:
         APP_DTU_Cmd_Ip_Get(cmd, rxBuf, rxLen);
+        DTU_Reconnect_OnAck();
         if (BSP_CONFIG_Show_Get() == 52) { LOGT("wmt:ip get\n"); }
         break;
     case DTU_CMD_SERVER_SYSTEM_CONFIG_SET:
         APP_DTU_Cmd_Config_Set(cmd, rxBuf, rxLen);
+        DTU_Reconnect_OnAck();
         if (BSP_CONFIG_Show_Get() == 52) { LOGT("wmt:cfg set\n"); }
         break;
     case DTU_CMD_SERVER_SYSTEM_CONFIG_GET:
         APP_DTU_Cmd_Config_Get_Response(cmd, rxBuf, rxLen);
+        DTU_Reconnect_OnAck();
         if (BSP_CONFIG_Show_Get() == 52) { LOG("wmt:cfg get\n"); }
         break;
     case DTU_CMD_SERVER_DEVICE_OTA:

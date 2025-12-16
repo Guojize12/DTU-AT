@@ -1337,10 +1337,13 @@ uint8_t  APP_RTU_AT_Chk_Ready(void)
 
 void APP_RTU_AT_Init(void)
 {
+	  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2, GPIO_PIN_SET);
+	
     BSP_TIMER_Init(&g_rtu_at_timer, APP_RTU_AT_timer, TIMEOUT_2S, 0);
     BSP_TIMER_Init(&g_rtu_at_config_timer, APP_RTU_AT_Config_Handle, 100, 100);
     BSP_TIMER_Start(&g_rtu_at_config_timer);
     BSP_TIMER_Init(&g_rtu_at_timer_err, APP_RTU_AT_Config_Handle_Err, TIMEOUT_10S, 0);
+	
 
 #ifdef USE_RTU_CACHE
     BSP_TIMER_Init(&g_timer_rtu_cache, APP_RTU_Cache_Send_Callback, TIMEOUT_200MS, TIMEOUT_200MS);
@@ -1349,6 +1352,10 @@ void APP_RTU_AT_Init(void)
     ringbuf_init(&g_rtu_rb_t, g_rtu_rb_buff, 10);
 #endif
 }
+
+
+
+
 
 /*****END OF FILE****/
 
