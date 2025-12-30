@@ -154,6 +154,11 @@ void APP_DTU_Send_DTURealTimeRecord(void)
         txBuf[num++] = aucData1.u8_buf[2];
         txBuf[num++] = aucData1.u8_buf[1];
         txBuf[num++] = aucData1.u8_buf[0];
+				
+				txBuf[num++] = GSS_device.run_direction >> 8;
+        txBuf[num++] = GSS_device.run_direction & 0xff;
+				
+				
     }
     APP_DTU_Head_Packing(DTU_CMD_TYPE_READ, txBuf, (num - 23), DTU_CMD_SERVER_GSS_DATA_UPLOAD, 0);
 
@@ -256,6 +261,8 @@ void APP_DTU_Send_DTUAlarm_sig(void)
     txBuf[num++] = aucData1.u8_buf[2];
     txBuf[num++] = aucData1.u8_buf[1];
     txBuf[num++] = aucData1.u8_buf[0];
+		GSS_device_alarm_stat.run_direction = GSS_device.run_direction;
+		txBuf[num++] = GSS_device_alarm_stat.run_direction;   // 新增：报警时方向
 
     APP_DTU_Head_Packing(DTU_CMD_TYPE_READ, txBuf, (num - 23), DTU_CMD_SERVER_GSS_ALARM_UPLOAD, 0);
 

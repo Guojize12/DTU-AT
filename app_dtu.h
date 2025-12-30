@@ -212,6 +212,7 @@ typedef struct
     // 位置信息字段
     uint32_t    position_data;      //报警时的位置数据
     uint8_t     position_valid;     //位置数据是否有效 0=无效 1=有效
+	  uint8_t     run_direction;      //新增：运行方向 0=停止 1=向上 2=向下
 
 
 } gss_device_alarm_stat;
