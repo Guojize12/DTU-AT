@@ -41,8 +41,27 @@ void APP_DTU_Response_Result(uint16_t cmd, uint8_t state, uint8_t *rxBuf, uint16
     uint16_t crc16 = bsp_crc16(txBuf + 23, 1);
     txBuf[24] = (uint8_t)crc16 & 0xFF;
     txBuf[25] = (uint8_t)(crc16 >> 8);
+		LOG_HEX(txBuf, 26);
     APP_DTU_Send(txBuf, 26);
 }
+
+//void APP_DTU_Response_Result(uint16_t cmd, uint8_t state, uint8_t *rxBuf, uint16_t rxLen)
+//{
+//    uint8_t txBuf[32] = {0};
+//    // 1. 原样拷贝包头（0~22字节）
+//    memcpy(txBuf, rxBuf, 23);
+
+//    // 2. 写入结果码
+//    txBuf[23] = state;
+
+//    // 3. 计算数据区CRC16（只对1字节state，和传输协议一样）
+//    uint16_t crc16 = bsp_crc16(&txBuf[23], 1);
+//    txBuf[24] = (uint8_t)crc16 & 0xFF;
+//    txBuf[25] = (uint8_t)(crc16 >> 8);
+//    LOG_HEX(txBuf, 26);
+//    // 4. 发送回平台
+//    APP_DTU_Send(txBuf, 26);
+//}
 
 void APP_DTU_Send_Hearbeat(void)
 {
@@ -193,11 +212,12 @@ void APP_DTU_Rec_Handle(void)
 {
     if (BSP_UART_Rec_Read(APP_DTU_UART) == USR_EOK)
     {
-        if (BSP_CONFIG_Show_Get() == 50)
-        {
+//        if (BSP_CONFIG_Show_Get() == 50)
+//        {
             LOGT("rtu rx[%d]: \n", APP_DTU_UART_BUF.rxLen);
             LOG_HEX(APP_DTU_UART_BUF.rxBuf, APP_DTU_UART_BUF.rxLen);
-        }
+			      LOGT("\n");
+//        }
         g_dtu_rx = APP_RTU_AT_Rx_Chl(APP_DTU_UART_BUF.rxBuf, APP_DTU_UART_BUF.rxLen);
         if (g_dtu_rx.rxLen > 0)
         {
